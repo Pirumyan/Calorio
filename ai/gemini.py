@@ -9,8 +9,8 @@ logger = logging.getLogger(__name__)
 # Настраиваем Gemini
 genai.configure(api_key=GOOGLE_API_KEY)
 
-# Используем Flash для быстрого MVP
-MODEL_NAME = 'gemini-1.5-flash' 
+# Используем актуальный Flash для быстрого MVP
+MODEL_NAME = 'gemini-2.5-flash' 
 
 def get_system_instruction(language: str) -> str:
     lang_map = {
