@@ -1,7 +1,7 @@
 import io
 import logging
 from aiogram import Router, F, Bot
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message
 from aiogram.fsm.context import FSMContext
 
@@ -103,7 +103,7 @@ async def handle_analysis_result(message: Message, bot_msg: Message, result: dic
     # Используем edit_text у отправленного сообщения-заглушки
     await bot_msg.edit_text(text, parse_mode="HTML")
 
-@router.message(F.text, ~OnboardingStates.waiting_for_weight, ~OnboardingStates.waiting_for_height, ~OnboardingStates.waiting_for_age, ~OnboardingStates.waiting_for_goal)
+@router.message(F.text, StateFilter(None))
 async def process_text_food(message: Message):
     # Пропускаем команды, которые могли упасть сюда
     if message.text.startswith('/'):
@@ -123,7 +123,7 @@ async def process_text_food(message: Message):
     )
     await handle_analysis_result(message, bot_msg, result)
 
-@router.message(F.voice)
+@router.message(F.voice, StateFilter(None))
 async def process_voice_food(message: Message, bot: Bot):
     user_id = message.from_user.id
     user = await UserService.get_user(user_id)
