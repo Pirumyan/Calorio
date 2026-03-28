@@ -25,6 +25,18 @@ class UserService:
             await connection.execute(query, user_id, weight, height, age, goal, language)
 
     @staticmethod
+    async def get_users_count() -> int:
+        query = "SELECT COUNT(*) FROM users"
+        async with db.pool.acquire() as connection:
+            return await connection.fetchval(query)
+
+    @staticmethod
+    async def update_language(user_id: int, language: str):
+        query = "UPDATE users SET language = $1 WHERE id = $2"
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, language, user_id)
+
+    @staticmethod
     def get_user_language(message: Message) -> str:
         # Для начала просто возвращаем язык клиента из ТГ, если не сохранен
         lang = message.from_user.language_code
