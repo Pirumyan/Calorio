@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.states import OnboardingStates
 from services.user_service import UserService
-from ai.gemini import analyze_food
+from ai.gemini import analyze_food, generate_meal_plan
 from config import ADMIN_ID
 
 router = Router()
@@ -27,7 +27,16 @@ TEXTS = {
         'menu_profile': "👤 Профиль",
         'menu_lang': "⚙️ Язык",
         'profile_text': "<b>Твой профиль:</b>\n⚖️ Вес: {weight} кг\n📏 Рост: {height} см\n🎂 Возраст: {age} лет\n🎯 Цель: {goal}",
-        'welcome_back': "Привет! Снова рад тебя видеть.\nПросто напиши или отправь голосовое сообщение о том, что ты съел, и я все посчитаю и проанализирую!"
+        'welcome_back': "Привет! Снова рад тебя видеть.\nПросто напиши или отправь голосовое сообщение о том, что ты съел, и я все посчитаю и проанализирую!",
+        'foods_label': "🥗 <b>Блюда</b>",
+        'calories_label': "🔥 <b>Калории</b>",
+        'proteins_label': "🥩 <b>Белки</b>",
+        'fats_label': "🧈 <b>Жиры</b>",
+        'carbs_label': "🥖 <b>Углеводы</b>",
+        'analysis_label': "💡 <b>Анализ</b>",
+        'generating_meal': "🍽 Подбираю меню...",
+        'unit_cal': "ккал",
+        'unit_g': "г"
     },
     'en': {
         'weight': "Let's get acquainted. Enter your <b>weight in kg</b> (e.g. 70):",
@@ -42,7 +51,16 @@ TEXTS = {
         'menu_profile': "👤 Profile",
         'menu_lang': "⚙️ Language",
         'profile_text': "<b>Your Profile:</b>\n⚖️ Weight: {weight} kg\n📏 Height: {height} cm\n🎂 Age: {age} years\n🎯 Goal: {goal}",
-        'welcome_back': "Welcome back!\nJust write or send a voice message about what you ate, and I'll calculate and analyze everything!"
+        'welcome_back': "Welcome back!\nJust write or send a voice message about what you ate, and I'll calculate and analyze everything!",
+        'foods_label': "🥗 <b>Foods</b>",
+        'calories_label': "🔥 <b>Calories</b>",
+        'proteins_label': "🥩 <b>Proteins</b>",
+        'fats_label': "🧈 <b>Fats</b>",
+        'carbs_label': "🥖 <b>Carbs</b>",
+        'analysis_label': "💡 <b>Analysis</b>",
+        'generating_meal': "🍽 Suggesting meal plan...",
+        'unit_cal': "kcal",
+        'unit_g': "g"
     },
     'am': {
         'weight': "Եկեք ծանոթանանք: Մուտքագրեք ձեր <b>քաշը կգ-ով</b> (օրինակ՝ 70)։",
@@ -57,7 +75,16 @@ TEXTS = {
         'menu_profile': "👤 Պրոֆիլ",
         'menu_lang': "⚙️ Լեզու",
         'profile_text': "<b>Ձեր պրոֆիլը.</b>\n⚖️ Քաշը՝ {weight} կգ\n📏 Հասակը՝ {height} սմ\n🎂 Տարիքը՝ {age} տարի\n🎯 Նպատակը՝ {goal}",
-        'welcome_back': "Բարի վերադարձ!\nՈւղղակի գրեք կամ ուղարկեք ձայնային հաղորդագրություն ձեր կերածի մասին, և ես ամեն ինչ կհաշվարկեմ ու կվերլուծեմ:"
+        'welcome_back': "Բարի վերադարձ!\nՈւղղակի գրեք կամ ուղարկեք ձայնային հաղորդագրություն ձեր կերածի մասին, և ես ամեն ինչ կհաշվարկեմ ու կվերլուծեմ:",
+        'foods_label': "🥗 <b>Ուտեստներ</b>",
+        'calories_label': "🔥 <b>Կալորիաներ</b>",
+        'proteins_label': "🥩 <b>Սպիտակուցներ</b>",
+        'fats_label': "🧈 <b>Ճարպեր</b>",
+        'carbs_label': "🥖 <b>Ածխաջրեր</b>",
+        'analysis_label': "💡 <b>Վերլուծություն</b>",
+        'generating_meal': "🍽 Կազմում եմ սննդացանկ...",
+        'unit_cal': "կկալ",
+        'unit_g': "գ"
     }
 }
 
@@ -195,18 +222,21 @@ async def process_goal(message: Message, state: FSMContext):
 
 # --- МЕНЮ И АНАЛИЗ ЕДЫ ---
 
-async def handle_analysis_result(bot_msg: Message, result: dict):
+async def handle_analysis_result(bot_msg: Message, result: dict, lang: str):
     if "error" in result:
         await bot_msg.edit_text(f"❌ {result.get('analysis')}")
         return
 
+    u_cal = get_text(lang, 'unit_cal')
+    u_g = get_text(lang, 'unit_g')
+    
     text = (
-        f"🥗 <b>Блюда</b>: {', '.join(result.get('foods', []))}\n"
-        f"🔥 <b>Калории</b>: ~{result.get('calories')} ккал\n"
-        f"🥩 <b>Белки</b>: {result.get('proteins')} г\n"
-        f"🧈 <b>Жиры</b>: {result.get('fats')} г\n"
-        f"🥖 <b>Углеводы</b>: {result.get('carbs')} г\n\n"
-        f"💡 <b>Анализ</b>: {result.get('analysis')}"
+        f"{get_text(lang, 'foods_label')}: {', '.join(result.get('foods', []))}\n"
+        f"{get_text(lang, 'calories_label')}: ~{result.get('calories')} {u_cal}\n"
+        f"{get_text(lang, 'proteins_label')}: {result.get('proteins')} {u_g}\n"
+        f"{get_text(lang, 'fats_label')}: {result.get('fats')} {u_g}\n"
+        f"{get_text(lang, 'carbs_label')}: {result.get('carbs')} {u_g}\n\n"
+        f"{get_text(lang, 'analysis_label')}: {result.get('analysis')}"
     )
     await bot_msg.edit_text(text, parse_mode="HTML")
 
@@ -224,7 +254,9 @@ async def process_text_messages(message: Message):
 
     # Обработка кнопок меню
     if message.text in [get_text('ru', 'menu_food'), get_text('en', 'menu_food'), get_text('am', 'menu_food')]:
-        await message.answer(get_text(lang, 'welcome_back'), reply_markup=get_main_keyboard(lang))
+        bot_msg = await message.answer(get_text(lang, 'generating_meal'))
+        plan = await generate_meal_plan(user, lang)
+        await bot_msg.edit_text(plan)
         return
 
     elif message.text in [get_text('ru', 'menu_profile'), get_text('en', 'menu_profile'), get_text('am', 'menu_profile')]:
@@ -248,7 +280,7 @@ async def process_text_messages(message: Message):
         mime_type="text/plain", 
         language=lang
     )
-    await handle_analysis_result(bot_msg, result)
+    await handle_analysis_result(bot_msg, result, lang)
 
 @router.message(F.voice, StateFilter(None))
 async def process_voice_food(message: Message, bot: Bot):
@@ -273,4 +305,4 @@ async def process_voice_food(message: Message, bot: Bot):
         language=lang
     )
     
-    await handle_analysis_result(bot_msg, result)
+    await handle_analysis_result(bot_msg, result, lang)
