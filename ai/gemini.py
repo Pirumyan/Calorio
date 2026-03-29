@@ -1,5 +1,6 @@
 import json
 import logging
+import tempfile
 from typing import Union, Dict, Any
 import google.generativeai as genai
 from config import GOOGLE_API_KEY
@@ -7,10 +8,12 @@ from config import GOOGLE_API_KEY
 logger = logging.getLogger(__name__)
 
 # Настраиваем Gemini
-genai.configure(api_key=GOOGLE_API_KEY)
+if GOOGLE_API_KEY:
+    genai.configure(api_key=GOOGLE_API_KEY)
 
-# Используем актуальный Flash для быстрого MVP
-MODEL_NAME = 'gemini-1.5-flash' 
+# Используем актуальную модель
+MODEL_NAME = 'gemini-2.5-flash'
+
 
 def get_system_instruction(language: str) -> str:
     lang_map = {
@@ -19,10 +22,11 @@ def get_system_instruction(language: str) -> str:
         'am': "Պատասխանեք հայերենով."
     }
     lang_prompt = lang_map.get(language, "Отвечай на русском языке.")
-    
+
     return f"""Ты - профессиональный диетолог и анализатор питания.
 Твоя задача - проанализировать то, что съел пользователь (из текста или голосового ввода).
 Оцени примерную калорийность, белки, жиры и углеводы, даже если точных цифр нет.
+
 Верни ТОЛЬКО валидный JSON со следующей структурой:
 {{
   "foods": ["Блюдо 1", "Блюдо 2"],
@@ -30,55 +34,91 @@ def get_system_instruction(language: str) -> str:
   "proteins": 50,
   "fats": 40,
   "carbs": 150,
-  "analysis": "Краткий комментарий диетолога о приеме пищи (до 3 предложений)"
+  "analysis": "Краткий комментарий диетолога (до 3 предложений)"
 }}
+
+НИКАКОГО markdown. Только чистый JSON.
 {lang_prompt}
 """
 
-async def analyze_food(input_data: Union[str, bytes], mime_type: str = "text/plain", language: str = 'ru') -> Dict[str, Any]:
-    """
-    Универсальная функция для анализа еды через текст или голос.
-    input_data - Либо строка текста, либо байты (.ogg)
-    mime_type - 'text/plain' или 'audio/ogg'
-    """
+
+async def analyze_food(
+    input_data: Union[str, bytes],
+    mime_type: str = "text/plain",
+    language: str = 'ru'
+) -> Dict[str, Any]:
+
+    if not GOOGLE_API_KEY:
+        return {
+            "error": "API key not set",
+            "analysis": "AI недоступен"
+        }
+
     model = genai.GenerativeModel(
-        MODEL_NAME,
+        model_name=MODEL_NAME,
         system_instruction=get_system_instruction(language),
         generation_config=genai.GenerationConfig(
-            response_mime_type="application/json"
+            temperature=0.0
         )
     )
 
     try:
         content_parts = []
+
+        # 📌 AUDIO (фикс через upload_file)
         if mime_type == "audio/ogg":
-            content_parts.append({
-                "mime_type": "audio/ogg",
-                "data": input_data
-            })
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
+                temp_audio.write(input_data)
+                temp_path = temp_audio.name
+
+            uploaded_file = genai.upload_file(path=temp_path)
+
+            content_parts.append(uploaded_file)
             content_parts.append("Проанализируй этот аудиотрек.")
+
+        # 📌 TEXT
         else:
             content_parts.append(input_data)
-        
-        # Запускаем генерацию асинхронно через run_in_executor или используем generate_content_async (если поддерживается)
+
         response = await model.generate_content_async(content_parts)
-        
-        # Получаем текст, он гарантированно JSON из-за response_mime_type
-        json_text = response.text
-        
-        # Зачастую Gemini 1.5 может возвращать JSON обернутый в markdown
-        json_text = json_text.strip()
+
+        if not response or not response.text:
+            raise ValueError("Empty response from Gemini")
+
+        json_text = response.text.strip()
+
+        # 📌 чистка markdown
         if json_text.startswith("```json"):
             json_text = json_text[7:]
         elif json_text.startswith("```"):
             json_text = json_text[3:]
         if json_text.endswith("```"):
             json_text = json_text[:-3]
-            
-        return json.loads(json_text.strip())
+
+        data = json.loads(json_text.strip())
+
+        # 📌 безопасный возврат
+        return {
+            "foods": data.get("foods", []),
+            "calories": data.get("calories"),
+            "proteins": data.get("proteins"),
+            "fats": data.get("fats"),
+            "carbs": data.get("carbs"),
+            "analysis": data.get("analysis", "")
+        }
+
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
+
         return {
             "error": "Не удалось проанализировать данные",
             "analysis": "Произошла ошибка при обращении к AI."
         }
+
+    finally:
+        # (опционально) можно чистить файл в Gemini
+        try:
+            if 'uploaded_file' in locals():
+                genai.delete_file(uploaded_file.name)
+        except Exception:
+            pass
