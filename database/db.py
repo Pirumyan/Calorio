@@ -33,6 +33,12 @@ class Database:
             subscription_type VARCHAR(10) DEFAULT 'free',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        CREATE TABLE IF NOT EXISTS food_logs (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            foods TEXT[],
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
         async with self.pool.acquire() as connection:
             await connection.execute(query)

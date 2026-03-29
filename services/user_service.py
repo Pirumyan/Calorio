@@ -45,3 +45,22 @@ class UserService:
         elif lang and lang.startswith('hy') or lang and lang.startswith('am'):
             return 'am'
         return 'ru'
+
+    @staticmethod
+    async def log_user_foods(user_id: int, foods: list[str]):
+        if not foods:
+            return
+        query = "INSERT INTO food_logs (user_id, foods) VALUES ($1, $2)"
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, user_id, foods)
+
+    @staticmethod
+    async def get_user_recent_foods(user_id: int, limit: int = 10) -> list[str]:
+        query = "SELECT foods FROM food_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
+        async with db.pool.acquire() as connection:
+            records = await connection.fetch(query, user_id, limit)
+            all_foods = []
+            for r in records:
+                all_foods.extend(r['foods'])
+            # Return unique items via set while preserving some order or just returning set
+            return list(set(all_foods))

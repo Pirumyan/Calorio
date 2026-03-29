@@ -124,7 +124,7 @@ async def analyze_food(
         except Exception:
             pass
 
-async def generate_meal_plan(user_profile: dict, language: str) -> str:
+async def generate_meal_plan(user_profile: dict, language: str, recent_foods: list[str] = None, is_regenerate: bool = False) -> str:
     if not GOOGLE_API_KEY:
         return "AI недоступен. Проверьте API ключ."
         
@@ -135,6 +135,15 @@ async def generate_meal_plan(user_profile: dict, language: str) -> str:
     }
     lang_prompt = lang_map.get(language, "Отвечай на русском языке")
 
+    foods_context = ""
+    if recent_foods:
+        foods_text = ", ".join(recent_foods)
+        foods_context = f"\nПользователь ранее ел и любит: {foods_text}. Обязательно учитывай эти предпочтения при составлении нового меню!"
+
+    regen_context = ""
+    if is_regenerate:
+        regen_context = "\nВАЖНО: Пользователь попросил предложить ДРУГОЕ меню. Сгенерируй новые блюда, отличные от предыдущих, но с учетом его любимой еды."
+
     prompt = f"""
 Ты профессиональный диетолог. 
 Пользователь запрашивает "Мое питание". Предложи 3-4 варианта блюд (завтрак, обед, ужин, перекус) на основе его профиля:
@@ -142,13 +151,17 @@ async def generate_meal_plan(user_profile: dict, language: str) -> str:
 Вес: {user_profile.get('weight')} кг
 Рост: {user_profile.get('height')} см
 Цель: {user_profile.get('goal')}
+{foods_context}
+{regen_context}
 
 Напиши короткий, приятный и мотивирующий ответ, включающий список рекомендуемых блюд с примерной калорийностью. Не пиши слишком длинно, уложись в 10-15 предложений.
 {lang_prompt}
 """
+    # Если просят другое меню, чуточку увеличиваем вариативность
+    temp = 0.85 if is_regenerate else 0.7
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,
-        generation_config=genai.GenerationConfig(temperature=0.7)
+        generation_config=genai.GenerationConfig(temperature=temp)
     )
     try:
         response = await model.generate_content_async(prompt)

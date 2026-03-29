@@ -110,6 +110,17 @@ def get_language_keyboard() -> InlineKeyboardMarkup:
         ]
     )
 
+def get_regenerate_keyboard(lang: str) -> InlineKeyboardMarkup:
+    texts = {
+        'ru': "🔄 Предложи другое меню",
+        'en': "🔄 Suggest another menu",
+        'am': "🔄 Առաջարկեք ուրիշ ընտրացանկ"
+    }
+    btn_text = texts.get(lang, texts['ru'])
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=btn_text, callback_data="regen_meal")]]
+    )
+
 # --- АДМИН ПАНЕЛЬ ---
 
 @router.message(Command("users"), StateFilter(None))
@@ -227,6 +238,10 @@ async def handle_analysis_result(bot_msg: Message, result: dict, lang: str):
         await bot_msg.edit_text(f"❌ {result.get('analysis')}")
         return
 
+    # Логируем съеденное в БД
+    if result.get("foods"):
+        await UserService.log_user_foods(bot_msg.chat.id, result.get("foods"))
+
     u_cal = get_text(lang, 'unit_cal')
     u_g = get_text(lang, 'unit_g')
     
@@ -255,8 +270,9 @@ async def process_text_messages(message: Message):
     # Обработка кнопок меню
     if message.text in [get_text('ru', 'menu_food'), get_text('en', 'menu_food'), get_text('am', 'menu_food')]:
         bot_msg = await message.answer(get_text(lang, 'generating_meal'))
-        plan = await generate_meal_plan(user, lang)
-        await bot_msg.edit_text(plan)
+        recent_foods = await UserService.get_user_recent_foods(message.from_user.id)
+        plan = await generate_meal_plan(user, lang, recent_foods)
+        await bot_msg.edit_text(plan, reply_markup=get_regenerate_keyboard(lang))
         return
 
     elif message.text in [get_text('ru', 'menu_profile'), get_text('en', 'menu_profile'), get_text('am', 'menu_profile')]:
@@ -306,3 +322,18 @@ async def process_voice_food(message: Message, bot: Bot):
     )
     
     await handle_analysis_result(bot_msg, result, lang)
+
+@router.callback_query(F.data == "regen_meal")
+async def process_regenerate_meal(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    user = await UserService.get_user(user_id)
+    if not user:
+        return
+    lang = user.get('language', 'ru')
+    
+    await callback.message.edit_text(get_text(lang, 'generating_meal'))
+    recent_foods = await UserService.get_user_recent_foods(user_id)
+    
+    plan = await generate_meal_plan(user, lang, recent_foods, is_regenerate=True)
+    await callback.message.edit_text(plan, reply_markup=get_regenerate_keyboard(lang))
+    await callback.answer()
