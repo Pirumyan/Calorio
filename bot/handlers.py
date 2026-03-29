@@ -105,7 +105,7 @@ async def cmd_start(message: Message, state: FSMContext):
         )
     else:
         await message.answer(
-            "Plese choose your language / Выберите язык / Ընտրեք լեզուն:",
+            "Please choose your language / Выберите язык / Ընտրեք լեզուն:",
             reply_markup=get_language_keyboard()
         )
         await state.set_state(OnboardingStates.waiting_for_language)
@@ -238,7 +238,7 @@ async def process_text_messages(message: Message):
         return
 
     elif message.text in [get_text('ru', 'menu_lang'), get_text('en', 'menu_lang'), get_text('am', 'menu_lang')]:
-        await message.answer("Plese choose your language / Выберите язык / Ընտրեք լեզուն:", reply_markup=get_language_keyboard())
+        await message.answer("Please choose your language / Выберите язык / Ընտրեք լեզուն:", reply_markup=get_language_keyboard())
         return
 
     # Если это не кнопка меню, значит это текст про еду

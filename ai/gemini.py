@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 genai.configure(api_key=GOOGLE_API_KEY)
 
 # Используем актуальный Flash для быстрого MVP
-MODEL_NAME = 'gemini-2.5-flash' 
+MODEL_NAME = 'gemini-1.5-flash' 
 
 def get_system_instruction(language: str) -> str:
     lang_map = {
@@ -65,7 +65,17 @@ async def analyze_food(input_data: Union[str, bytes], mime_type: str = "text/pla
         
         # Получаем текст, он гарантированно JSON из-за response_mime_type
         json_text = response.text
-        return json.loads(json_text)
+        
+        # Зачастую Gemini 1.5 может возвращать JSON обернутый в markdown
+        json_text = json_text.strip()
+        if json_text.startswith("```json"):
+            json_text = json_text[7:]
+        elif json_text.startswith("```"):
+            json_text = json_text[3:]
+        if json_text.endswith("```"):
+            json_text = json_text[:-3]
+            
+        return json.loads(json_text.strip())
     except Exception as e:
         logger.error(f"Gemini API error: {e}")
         return {
