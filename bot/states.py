@@ -10,3 +10,4 @@ class OnboardingStates(StatesGroup):
 class FeatureStates(StatesGroup):
     waiting_for_new_weight = State()
     waiting_for_fridge_ingredients = State()
+    waiting_for_diary = State()

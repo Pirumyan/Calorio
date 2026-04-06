@@ -12,7 +12,7 @@ if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
 
 # Используем актуальную модель
-MODEL_NAME = 'gemini-2.5-flash'
+MODEL_NAME = 'gemini-1.5-flash'
 
 
 def get_system_instruction(language: str) -> str:
@@ -44,6 +44,45 @@ def get_system_instruction(language: str) -> str:
 {lang_prompt}
 """
 
+def get_diary_instruction(language: str) -> str:
+    lang_map = {
+        'ru': "Отвечай строго на русском языке.",
+        'en': "Respond strictly in English.",
+        'am': "Պատասխանեք խստորեն հայերենով:"
+    }
+    lang_prompt = lang_map.get(language, "Отвечай на русском языке.")
+
+    return f"""Ты - персональный диетолог и фитнес-помощник.
+Пользователь присылает тебе "Дневник за день" (текстом или голосом). 
+Твоя задача - вытащить из него ВСЮ полезную информацию и вернуть её в формате JSON.
+
+Информация, которую нужно извлечь:
+1. Съеденная еда (названия, калории, БЖУ).
+2. Выпитая вода (в мл).
+3. Физическая активность (название и сожженные калории).
+4. Обновления холодильника (что купил - добавить, что закончилось - удалить).
+5. Краткий анализ дня и совет.
+
+Верни ТОЛЬКО валидный JSON со следующей структурой:
+{{
+  "foods": [
+    {{"name": "яичница", "calories": 200, "proteins": 15, "fats": 12, "carbs": 2}}
+  ],
+  "water": 500,
+  "exercises": [
+    {{"name": "бег 20 мин", "calories_burned": 250}}
+  ],
+  "fridge_add": ["помидоры", "молоко"],
+  "fridge_remove": ["лук"],
+  "analysis": "Отличное начало дня! Но постарайся пить больше воды вечером."
+}}
+
+ОЧЕНЬ ВАЖНО: {lang_prompt}
+Если какая-то информация отсутствует (например, не было спорта), верни пустой список или 0.
+
+НИКАКОГО markdown. Только чистый JSON.
+"""
+
 
 async def analyze_food(
     input_data: Union[str, bytes],
@@ -68,7 +107,7 @@ async def analyze_food(
     try:
         content_parts = []
 
-        # 📌 AUDIO (фикс через upload_file)
+        # 📌 AUDIO
         if mime_type == "audio/ogg":
             with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
                 temp_audio.write(input_data)
@@ -100,7 +139,6 @@ async def analyze_food(
 
         data = json.loads(json_text.strip())
 
-        # 📌 безопасный возврат
         return {
             "foods": data.get("foods", []),
             "calories": data.get("calories"),
@@ -123,6 +161,50 @@ async def analyze_food(
                 genai.delete_file(uploaded_file.name)
         except Exception:
             pass
+
+async def analyze_diary_entry(
+    input_data: Union[str, bytes],
+    mime_type: str = "text/plain",
+    language: str = 'ru'
+) -> Dict[str, Any]:
+
+    if not GOOGLE_API_KEY:
+        return {"error": "API key not set"}
+
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        system_instruction=get_diary_instruction(language),
+        generation_config=genai.GenerationConfig(temperature=0.0)
+    )
+
+    try:
+        content_parts = []
+        if mime_type == "audio/ogg":
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
+                temp_audio.write(input_data)
+                temp_path = temp_audio.name
+            uploaded_file = genai.upload_file(path=temp_path)
+            content_parts.append(uploaded_file)
+            content_parts.append("Проанализируй дневник из аудио.")
+        else:
+            content_parts.append(f"Проанализируй этот дневник: {input_data}")
+
+        response = await model.generate_content_async(content_parts)
+        json_text = response.text.strip()
+        
+        if json_text.startswith("```json"): json_text = json_text[7:]
+        elif json_text.startswith("```"): json_text = json_text[3:]
+        if json_text.endswith("```"): json_text = json_text[:-3]
+
+        return json.loads(json_text.strip())
+
+    except Exception as e:
+        logger.error(f"Gemini Diary error: {e}")
+        return {"error": str(e)}
+    finally:
+        if 'uploaded_file' in locals():
+            try: genai.delete_file(uploaded_file.name)
+            except: pass
 
 async def generate_meal_plan(user_profile: dict, language: str, recent_foods: list[str] = None, is_regenerate: bool = False) -> str:
     if not GOOGLE_API_KEY:
@@ -157,7 +239,6 @@ async def generate_meal_plan(user_profile: dict, language: str, recent_foods: li
 Напиши короткий, приятный и мотивирующий ответ, включающий список рекомендуемых блюд с примерной калорийностью. Не пиши слишком длинно, уложись в 10-15 предложений.
 {lang_prompt}
 """
-    # Если просят другое меню, чуточку увеличиваем вариативность
     temp = 0.85 if is_regenerate else 0.7
     model = genai.GenerativeModel(
         model_name=MODEL_NAME,

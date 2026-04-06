@@ -78,16 +78,23 @@ class UserService:
         FROM water_logs 
         WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
         """
+        exercise_query = """
+        SELECT COALESCE(SUM(calories_burned), 0) as burned 
+        FROM exercise_logs 
+        WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
+        """
         async with db.pool.acquire() as connection:
             food_stats = await connection.fetchrow(food_query, user_id)
             water_stats = await connection.fetchval(water_query, user_id)
+            burned_stats = await connection.fetchval(exercise_query, user_id)
         
         return {
             'calories': food_stats['calories'],
             'proteins': food_stats['proteins'],
             'fats': food_stats['fats'],
             'carbs': food_stats['carbs'],
-            'water': water_stats
+            'water': water_stats,
+            'burned': burned_stats
         }
 
     @staticmethod
@@ -98,6 +105,32 @@ class UserService:
             async with connection.transaction():
                 await connection.execute(update_query, weight, user_id)
                 await connection.execute(log_query, user_id, weight)
+
+    @staticmethod
+    async def add_fridge_item(user_id: int, item_name: str, quantity: str = None):
+        query = "INSERT INTO fridge_items (user_id, item_name, quantity) VALUES ($1, $2, $3)"
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, user_id, item_name, quantity)
+
+    @staticmethod
+    async def remove_fridge_item(user_id: int, item_name: str):
+        # Удаляем наиболее подходящий предмет
+        query = "DELETE FROM fridge_items WHERE id = (SELECT id FROM fridge_items WHERE user_id = $1 AND item_name ILIKE $2 LIMIT 1)"
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, user_id, f"%{item_name}%")
+
+    @staticmethod
+    async def get_fridge_items(user_id: int) -> list[dict]:
+        query = "SELECT item_name, quantity FROM fridge_items WHERE user_id = $1"
+        async with db.pool.acquire() as connection:
+            records = await connection.fetch(query, user_id)
+            return [dict(r) for r in records]
+
+    @staticmethod
+    async def log_exercise(user_id: int, description: str, calories_burned: float):
+        query = "INSERT INTO exercise_logs (user_id, description, calories_burned) VALUES ($1, $2, $3)"
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, user_id, description, calories_burned)
 
     @staticmethod
     def calculate_daily_norms(user: dict) -> dict:

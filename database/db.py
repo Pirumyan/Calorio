@@ -57,6 +57,22 @@ class Database:
             weight REAL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+
+        CREATE TABLE IF NOT EXISTS fridge_items (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            item_name TEXT NOT NULL,
+            quantity TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS exercise_logs (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            description TEXT,
+            calories_burned REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
         async with self.pool.acquire() as connection:
             await connection.execute(query)
