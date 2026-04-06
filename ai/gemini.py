@@ -169,3 +169,34 @@ async def generate_meal_plan(user_profile: dict, language: str, recent_foods: li
     except Exception as e:
         logger.error(f"Gemini Meal Plan error: {e}")
         return "Произошла ошибка при генерации плана питания."
+
+async def generate_fridge_recipe(ingredients: str, user_profile: dict, norms: dict, language: str) -> str:
+    if not GOOGLE_API_KEY:
+        return "AI недоступен. Проверьте API ключ."
+        
+    lang_map = {
+        'ru': "Отвечай строго на русском языке.",
+        'en': "Respond strictly in English.",
+        'am': "Պատասխանեք խստորեն հայերենով:"
+    }
+    lang_prompt = lang_map.get(language, "Отвечай на русском языке")
+
+    prompt = f"""
+Ты профессиональный шеф-повар и диетолог. 
+У пользователя есть следующие продукты в холодильнике: {ingredients}.
+Его дневная норма калорий: ~{norms.get('calories')} ккал. Цель: {user_profile.get('goal')}.
+
+Предложи 1 здоровый и вкусный рецепт из этих ингредиентов (можно добавить базу: соль, масло, специи).
+Укажи КБЖУ получившегося блюда и пошаговый рецепт.
+{lang_prompt}
+"""
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        generation_config=genai.GenerationConfig(temperature=0.7)
+    )
+    try:
+        response = await model.generate_content_async(prompt)
+        return response.text
+    except Exception as e:
+        logger.error(f"Gemini Fridge Recipe error: {e}")
+        return "Произошла ошибка при генерации рецепта."

@@ -6,3 +6,7 @@ class OnboardingStates(StatesGroup):
     waiting_for_height = State()
     waiting_for_age = State()
     waiting_for_goal = State()
+
+class FeatureStates(StatesGroup):
+    waiting_for_new_weight = State()
+    waiting_for_fridge_ingredients = State()

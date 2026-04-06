@@ -5,9 +5,9 @@ from aiogram.filters import CommandStart, Command, StateFilter
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup, KeyboardButton
 from aiogram.fsm.context import FSMContext
 
-from bot.states import OnboardingStates
+from bot.states import OnboardingStates, FeatureStates
 from services.user_service import UserService
-from ai.gemini import analyze_food, generate_meal_plan
+from ai.gemini import analyze_food, generate_meal_plan, generate_fridge_recipe
 from config import ADMIN_ID
 
 router = Router()
@@ -36,7 +36,17 @@ TEXTS = {
         'analysis_label': "💡 <b>Анализ</b>",
         'generating_meal': "🍽 Подбираю меню...",
         'unit_cal': "ккал",
-        'unit_g': "г"
+        'unit_g': "г",
+        'menu_stats': "📊 Мой день",
+        'menu_water': "💧 Выпил воду (250мл)",
+        'menu_fridge': "🧊 Что в холодильнике?",
+        'menu_weight': "⚖️ Обновить вес",
+        'water_added': "💧 Добавлено 250 мл воды! Всего за сегодня: {total} / {norm} мл",
+        'fridge_prompt': "Напиши, какие продукты у тебя есть (например: курица, яйца, шпинат):",
+        'fridge_generating': "👨‍🍳 Придумываю рецепт...",
+        'weight_prompt': "Отправь свой текущий вес в кг (например, 70.5):",
+        'weight_updated': "✅ Твой вес обновлен: {weight} кг. Я пересчитал твои суточные нормы!",
+        'stats_text': "📊 <b>Твой прогресс за сегодня:</b>\n🔥 Калории: {cal} / {norm_cal} ккал\n🥩 Белки: {pro} / {norm_pro} г\n🧈 Жиры: {fat} / {norm_fat} г\n🥖 Углеводы: {car} / {norm_car} г\n💧 Вода: {water} / {norm_water} мл"
     },
     'en': {
         'weight': "Let's get acquainted. Enter your <b>weight in kg</b> (e.g. 70):",
@@ -60,7 +70,17 @@ TEXTS = {
         'analysis_label': "💡 <b>Analysis</b>",
         'generating_meal': "🍽 Suggesting meal plan...",
         'unit_cal': "kcal",
-        'unit_g': "g"
+        'unit_g': "g",
+        'menu_stats': "📊 My Day",
+        'menu_water': "💧 Drank water (250ml)",
+        'menu_fridge': "🧊 What's in the fridge?",
+        'menu_weight': "⚖️ Update weight",
+        'water_added': "💧 Added 250ml of water! Total today: {total} / {norm} ml",
+        'fridge_prompt': "Write what ingredients you have (e.g., chicken, eggs, spinach):",
+        'fridge_generating': "👨‍🍳 Inventing a recipe...",
+        'weight_prompt': "Send your current weight in kg (e.g., 70.5):",
+        'weight_updated': "✅ Your weight is updated: {weight} kg. I have recalculated your daily norms!",
+        'stats_text': "📊 <b>Your progress today:</b>\n🔥 Calories: {cal} / {norm_cal} kcal\n🥩 Proteins: {pro} / {norm_pro} g\n🧈 Fats: {fat} / {norm_fat} g\n🥖 Carbs: {car} / {norm_car} g\n💧 Water: {water} / {norm_water} ml"
     },
     'am': {
         'weight': "Եկեք ծանոթանանք: Մուտքագրեք ձեր <b>քաշը կգ-ով</b> (օրինակ՝ 70)։",
@@ -84,7 +104,17 @@ TEXTS = {
         'analysis_label': "💡 <b>Վերլուծություն</b>",
         'generating_meal': "🍽 Կազմում եմ սննդացանկ...",
         'unit_cal': "կկալ",
-        'unit_g': "գ"
+        'unit_g': "գ",
+        'menu_stats': "📊 Իմ օրը",
+        'menu_water': "💧 Խմել եմ ջուր (250մլ)",
+        'menu_fridge': "🧊 Ի՞նչ կա սառնարանում:",
+        'menu_weight': "⚖️ Թարմացնել քաշը",
+        'water_added': "💧 Ավելացվեց 250մլ ջուր: Այսօր ընդհանուր՝ {total} / {norm} մլ",
+        'fridge_prompt': "Գրեք, թե ինչ մթերքներ ունեք (օրինակ՝ հավ, ձու, սպանախ)։",
+        'fridge_generating': "👨‍🍳 Մտածում եմ բաղադրատոմս...",
+        'weight_prompt': "Ուղարկեք ձեր ներկայիս քաշը կգ-ով (օրինակ՝ 70.5)։",
+        'weight_updated': "✅ Ձեր քաշը թարմացվել է՝ {weight} կգ։ Ես վերահաշվարկել եմ ձեր օրական նորմաները:",
+        'stats_text': "📊 <b>Ձեր առաջընթացը այսօր.</b>\n🔥 Կալորիաներ՝ {cal} / {norm_cal} կկալ\n🥩 Սպիտակուցներ՝ {pro} / {norm_pro} գ\n🧈 Ճարպեր՝ {fat} / {norm_fat} գ\n🥖 Ածխաջրեր՝ {car} / {norm_car} գ\n💧 Ջուր՝ {water} / {norm_water} մլ"
     }
 }
 
@@ -94,8 +124,10 @@ def get_text(lang: str, key: str) -> str:
 def get_main_keyboard(lang: str) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=get_text(lang, 'menu_food'))],
-            [KeyboardButton(text=get_text(lang, 'menu_profile')), KeyboardButton(text=get_text(lang, 'menu_lang'))]
+            [KeyboardButton(text=get_text(lang, 'menu_food')), KeyboardButton(text=get_text(lang, 'menu_fridge'))],
+            [KeyboardButton(text=get_text(lang, 'menu_stats')), KeyboardButton(text=get_text(lang, 'menu_water'))],
+            [KeyboardButton(text=get_text(lang, 'menu_profile')), KeyboardButton(text=get_text(lang, 'menu_weight'))],
+            [KeyboardButton(text=get_text(lang, 'menu_lang'))]
         ],
         resize_keyboard=True
     )
@@ -240,7 +272,14 @@ async def handle_analysis_result(bot_msg: Message, result: dict, lang: str):
 
     # Логируем съеденное в БД
     if result.get("foods"):
-        await UserService.log_user_foods(bot_msg.chat.id, result.get("foods"))
+        await UserService.log_user_foods(
+            bot_msg.chat.id, 
+            result.get("foods"),
+            calories=result.get("calories", 0),
+            proteins=result.get("proteins", 0),
+            fats=result.get("fats", 0),
+            carbs=result.get("carbs", 0)
+        )
 
     u_cal = get_text(lang, 'unit_cal')
     u_g = get_text(lang, 'unit_g')
@@ -256,7 +295,7 @@ async def handle_analysis_result(bot_msg: Message, result: dict, lang: str):
     await bot_msg.edit_text(text, parse_mode="HTML")
 
 @router.message(F.text, StateFilter(None))
-async def process_text_messages(message: Message):
+async def process_text_messages(message: Message, state: FSMContext):
     if message.text.startswith('/'):
         return
 
@@ -287,6 +326,41 @@ async def process_text_messages(message: Message):
 
     elif message.text in [get_text('ru', 'menu_lang'), get_text('en', 'menu_lang'), get_text('am', 'menu_lang')]:
         await message.answer("Please choose your language / Выберите язык / Ընտրեք լեզուն:", reply_markup=get_language_keyboard())
+        return
+
+    # Menu Stats
+    elif message.text in [get_text('ru', 'menu_stats'), get_text('en', 'menu_stats'), get_text('am', 'menu_stats')]:
+        stats = await UserService.get_daily_stats(user['id'])
+        norms = UserService.calculate_daily_norms(user)
+        text = get_text(lang, 'stats_text').format(
+            cal=stats['calories'], norm_cal=norms['calories'],
+            pro=stats['proteins'], norm_pro=norms['proteins'],
+            fat=stats['fats'], norm_fat=norms['fats'],
+            car=stats['carbs'], norm_car=norms['carbs'],
+            water=stats['water'], norm_water=norms['water']
+        )
+        await message.answer(text, parse_mode="HTML")
+        return
+
+    # Menu Water
+    elif message.text in [get_text('ru', 'menu_water'), get_text('en', 'menu_water'), get_text('am', 'menu_water')]:
+        await UserService.add_water(user['id'], 250)
+        stats = await UserService.get_daily_stats(user['id'])
+        norms = UserService.calculate_daily_norms(user)
+        text = get_text(lang, 'water_added').format(total=stats['water'], norm=norms['water'])
+        await message.answer(text)
+        return
+
+    # Menu Fridge
+    elif message.text in [get_text('ru', 'menu_fridge'), get_text('en', 'menu_fridge'), get_text('am', 'menu_fridge')]:
+        await message.answer(get_text(lang, 'fridge_prompt'))
+        await state.set_state(FeatureStates.waiting_for_fridge_ingredients)
+        return
+
+    # Menu Weight
+    elif message.text in [get_text('ru', 'menu_weight'), get_text('en', 'menu_weight'), get_text('am', 'menu_weight')]:
+        await message.answer(get_text(lang, 'weight_prompt'))
+        await state.set_state(FeatureStates.waiting_for_new_weight)
         return
 
     # Если это не кнопка меню, значит это текст про еду
@@ -337,3 +411,27 @@ async def process_regenerate_meal(callback: CallbackQuery):
     plan = await generate_meal_plan(user, lang, recent_foods, is_regenerate=True)
     await callback.message.edit_text(plan, reply_markup=get_regenerate_keyboard(lang))
     await callback.answer()
+
+@router.message(FeatureStates.waiting_for_new_weight, F.text)
+async def process_new_weight(message: Message, state: FSMContext):
+    user = await UserService.get_user(message.from_user.id)
+    lang = user.get('language', 'ru') if user else 'ru'
+    try:
+        weight = float(message.text.replace(',', '.'))
+        await UserService.update_weight_and_log(message.from_user.id, weight)
+        await message.answer(get_text(lang, 'weight_updated').format(weight=weight))
+        await state.clear()
+    except ValueError:
+        await message.answer(get_text(lang, 'error_number'))
+
+@router.message(FeatureStates.waiting_for_fridge_ingredients, F.text)
+async def process_fridge_ingredients(message: Message, state: FSMContext):
+    user = await UserService.get_user(message.from_user.id)
+    lang = user.get('language', 'ru') if user else 'ru'
+    
+    bot_msg = await message.answer(get_text(lang, 'fridge_generating'))
+    norms = UserService.calculate_daily_norms(user)
+    
+    recipe = await generate_fridge_recipe(message.text, user, norms, lang)
+    await bot_msg.edit_text(recipe)
+    await state.clear()

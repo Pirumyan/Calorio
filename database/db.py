@@ -39,6 +39,24 @@ class Database:
             foods TEXT[],
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
+        ALTER TABLE food_logs ADD COLUMN IF NOT EXISTS calories REAL DEFAULT 0;
+        ALTER TABLE food_logs ADD COLUMN IF NOT EXISTS proteins REAL DEFAULT 0;
+        ALTER TABLE food_logs ADD COLUMN IF NOT EXISTS fats REAL DEFAULT 0;
+        ALTER TABLE food_logs ADD COLUMN IF NOT EXISTS carbs REAL DEFAULT 0;
+
+        CREATE TABLE IF NOT EXISTS water_logs (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            amount INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS weight_logs (
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+            weight REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
         """
         async with self.pool.acquire() as connection:
             await connection.execute(query)
