@@ -12,12 +12,13 @@ from database.db import db
 # Настраиваем минимальное логирование, чтобы не грузить CPU/RAM
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+from zoneinfo import ZoneInfo
 
 async def water_reminder_task(bot: Bot):
     while True:
         await asyncio.sleep(4 * 3600)  # Every 4 hours
-        now = datetime.now()
-        if now.hour < 8 or now.hour >= 22:
+        now = datetime.now(ZoneInfo('Asia/Yerevan'))
+        if not (10 <= now.hour < 23):
             continue
             
         try:

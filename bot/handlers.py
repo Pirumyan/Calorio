@@ -50,7 +50,9 @@ TEXTS = {
         'stats_text': "📊 <b>Твой прогресс за сегодня:</b>\n🔥 Калории: {cal} / {norm_cal} ккал\n🥩 Белки: {pro} / {norm_pro} г\n🧈 Жиры: {fat} / {norm_fat} г\n🥖 Углеводы: {car} / {norm_car} г\n💧 Вода: {water} / {norm_water} мл\n🏃 Сожжено: {burned} ккал",
         'diary_prompt': "Расскажи, как прошел твой день? (что ел, пил, занимался ли спортом, что купил):",
         'processing_diary': "📖 Анализирую твой день...",
-        'diary_done': "✅ Дневник сохранен! Статистика и холодильник обновлены."
+        'diary_done': "✅ Дневник сохранен! Статистика и холодильник обновлены.",
+        'btn_back': "⬅️ Назад",
+        'action_cancelled': "Действие отменено. Вы вернулись в главное меню."
     },
     'en': {
         'weight': "Let's get acquainted. Enter your <b>weight in kg</b> (e.g. 70):",
@@ -88,7 +90,9 @@ TEXTS = {
         'stats_text': "📊 <b>Your progress today:</b>\n🔥 Calories: {cal} / {norm_cal} kcal\n🥩 Proteins: {pro} / {norm_pro} g\n🧈 Fats: {fat} / {norm_fat} g\n🥖 Carbs: {car} / {norm_car} g\n💧 Water: {water} / {norm_water} ml\n🏃 Burned: {burned} kcal",
         'diary_prompt': "Tell me how your day went? (what you ate, drank, did you exercise, what you bought):",
         'processing_diary': "📖 Analyzing your day...",
-        'diary_done': "✅ Diary saved! Stats and fridge updated."
+        'diary_done': "✅ Diary saved! Stats and fridge updated.",
+        'btn_back': "⬅️ Back",
+        'action_cancelled': "Action cancelled. Returned to main menu."
     },
     'am': {
         'weight': "Եկեք ծանոթանանք: Մուտքագրեք ձեր <b>քաշը կգ-ով</b> (օրինակ՝ 70)։",
@@ -122,17 +126,24 @@ TEXTS = {
         'fridge_prompt': "Գրեք, թե ինչ մթերքներ ունեք (օրինակ՝ հավ, ձու, սպանախ)։",
         'fridge_generating': "👨‍🍳 Մտածում եմ բաղադրատոմս...",
         'weight_prompt': "Ուղարկեք ձեր ներկայիս քաշը կգ-ով (օրինակ՝ 70.5)։",
-        'weight_updated': "✅ Ձեր քաշը թարմացվել է՝ {weight} կգ։ Ես վերահաշվարկել եմ ձեր օրական նորմաները:",
+        'weight_updated': "✅ Ձեր քաշը թարմացվել է՝ {weight} կգ։ Ես վերահաշվարկել ենք ձեր օրական նորմաները:",
         'stats_text': "📊 <b>Ձեր առաջընթացը այսօր.</b>\n🔥 Կալորիաներ՝ {cal} / {norm_cal} կկալ\n🥩 Սպիտակուցներ՝ {pro} / {norm_pro} գ\n🧈 Ճարպեր՝ {fat} / {norm_fat} գ\n🥖 Ածխաջրեր՝ {car} / {norm_car} գ\n💧 Ջուր՝ {water} / {norm_water} մլ\n🏃 Այրված՝ {burned} կկալ",
         'diary_prompt': "Պատմեք, թե ինչպես անցավ ձեր օրը: (ինչ կերաք, խմեցիք, արդյոք սպորտով զբաղվեցիք, ինչ գնեցիք):",
         'processing_diary': "📖 Վերլուծում եմ ձեր օրը...",
-        'diary_done': "✅ Օրագիրը պահպանված է: Վիճակագրությունը և սառնարանը թարմացվել են:"
+        'diary_done': "✅ Օրագիրը պահպանված է: Վիճակագրությունը և սառնարանը թարմացվել են:",
+        'btn_back': "⬅️ Ետ",
+        'action_cancelled': "Գործողությունը չեղարկվել է: Դուք վերադարձել եք գլխավոր մենյու:"
     }
 }
 
 def get_text(lang: str, key: str) -> str:
     return TEXTS.get(lang, TEXTS['ru']).get(key, "")
 
+def get_back_keyboard(lang: str) -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text=get_text(lang, 'btn_back'))]],
+        resize_keyboard=True
+    )
 def get_main_keyboard(lang: str) -> ReplyKeyboardMarkup:
     kb = ReplyKeyboardMarkup(
         keyboard=[
@@ -369,21 +380,21 @@ async def process_text_messages(message: Message, state: FSMContext):
         fridge_items = await UserService.get_fridge_items(user['id'])
         if fridge_items:
             items_str = ", ".join([f"{i['item_name']} ({i['quantity']})" if i['quantity'] else i['item_name'] for i in fridge_items])
-            await message.answer(f"🧊 <b>В твоем холодильнике:</b>\n{items_str}\n\n{get_text(lang, 'fridge_prompt')}", parse_mode="HTML")
+            await message.answer(f"🧊 <b>В твоем холодильнике:</b>\n{items_str}\n\n{get_text(lang, 'fridge_prompt')}", parse_mode="HTML", reply_markup=get_back_keyboard(lang))
         else:
-            await message.answer(get_text(lang, 'fridge_prompt'))
+            await message.answer(get_text(lang, 'fridge_prompt'), reply_markup=get_back_keyboard(lang))
         await state.set_state(FeatureStates.waiting_for_fridge_ingredients)
         return
 
     # Menu Diary
     elif message.text in [get_text('ru', 'menu_diary'), get_text('en', 'menu_diary'), get_text('am', 'menu_diary')]:
-        await message.answer(get_text(lang, 'diary_prompt'))
+        await message.answer(get_text(lang, 'diary_prompt'), reply_markup=get_back_keyboard(lang))
         await state.set_state(FeatureStates.waiting_for_diary)
         return
 
     # Menu Weight
     elif message.text in [get_text('ru', 'menu_weight'), get_text('en', 'menu_weight'), get_text('am', 'menu_weight')]:
-        await message.answer(get_text(lang, 'weight_prompt'))
+        await message.answer(get_text(lang, 'weight_prompt'), reply_markup=get_back_keyboard(lang))
         await state.set_state(FeatureStates.waiting_for_new_weight)
         return
 
@@ -436,6 +447,14 @@ async def process_regenerate_meal(callback: CallbackQuery):
     await callback.message.edit_text(plan, reply_markup=get_regenerate_keyboard(lang))
     await callback.answer()
 
+@router.message(F.text.in_([TEXTS['ru']['btn_back'], TEXTS['en']['btn_back'], TEXTS['am']['btn_back']]))
+async def process_cancel(message: Message, state: FSMContext):
+    user = await UserService.get_user(message.from_user.id)
+    lang = user.get('language', 'ru') if user else 'ru'
+    
+    await state.clear()
+    await message.answer(get_text(lang, 'action_cancelled'), reply_markup=get_main_keyboard(lang))
+
 @router.message(FeatureStates.waiting_for_new_weight, F.text)
 async def process_new_weight(message: Message, state: FSMContext):
     user = await UserService.get_user(message.from_user.id)
@@ -443,7 +462,7 @@ async def process_new_weight(message: Message, state: FSMContext):
     try:
         weight = float(message.text.replace(',', '.'))
         await UserService.update_weight_and_log(message.from_user.id, weight)
-        await message.answer(get_text(lang, 'weight_updated').format(weight=weight))
+        await message.answer(get_text(lang, 'weight_updated').format(weight=weight), reply_markup=get_main_keyboard(lang))
         await state.clear()
     except ValueError:
         await message.answer(get_text(lang, 'error_number'))
@@ -458,6 +477,7 @@ async def process_fridge_ingredients(message: Message, state: FSMContext):
     
     recipe = await generate_fridge_recipe(message.text, user, norms, lang)
     await bot_msg.edit_text(recipe)
+    await message.answer("✅", reply_markup=get_main_keyboard(lang))
     await state.clear()
 
 @router.message(FeatureStates.waiting_for_diary, F.text | F.voice)
@@ -513,4 +533,5 @@ async def process_diary_entry_handler(message: Message, state: FSMContext, bot: 
 
     analysis_text = result.get("analysis", "")
     await bot_msg.edit_text(f"{analysis_text}\n\n{get_text(lang, 'diary_done')}")
+    await message.answer("✅", reply_markup=get_main_keyboard(lang))
     await state.clear()
