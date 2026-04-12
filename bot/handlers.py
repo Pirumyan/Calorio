@@ -51,7 +51,6 @@ TEXTS = {
                 'btn_delete': "❌ Удалить",
         'btn_analyze_day': "💡 Анализ дня",
         'analyzing_day': "🔄 Анализирую ваш день...",
-        'water_added': 
         'water_added': "💧 Добавлено 250 мл воды! Всего за сегодня: {total} / {norm} мл",
         'fridge_prompt': "Напиши, какие продукты у тебя есть (например: курица, яйца, шпинат):",
         'fridge_generating': "👨‍🍳 Придумываю рецепт...",
@@ -99,7 +98,6 @@ TEXTS = {
                 'btn_delete': "❌ Delete",
         'btn_analyze_day': "💡 Analyze Day",
         'analyzing_day': "🔄 Analyzing your day...",
-        'water_added': 
         'water_added': "💧 Added 250ml of water! Total today: {total} / {norm} ml",
         'fridge_prompt': "Write what ingredients you have (e.g., chicken, eggs, spinach):",
         'fridge_generating': "👨‍🍳 Inventing a recipe...",
@@ -147,7 +145,6 @@ TEXTS = {
                 'btn_delete': "❌ Ջնջել",
         'btn_analyze_day': "💡 Վերլուծել օրը",
         'analyzing_day': "🔄 Վերլուծում եм ձեր օրը...",
-        'water_added': 
         'water_added': "💧 Ավելացվեց 250մլ ջուր: Այսօր ընդհանուր՝ {total} / {norm} մլ",
         'fridge_prompt': "Գրեք, թե ինչ մթերքներ ունեք (օրինակ՝ հավ, ձու, սպանախ)։",
         'fridge_generating': "👨‍🍳 Մտածում եմ բաղադրատոմս...",
@@ -390,7 +387,7 @@ async def process_text_messages(message: Message, state: FSMContext):
             water=stats['water'], norm_water=norms['water'],
             burned=stats['burned']
         )
-                kb = InlineKeyboardMarkup(inline_keyboard=[
+        kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=get_text(lang, 'btn_analyze_day'), callback_data="analyze_day")]
         ])
         await message.answer(text, parse_mode="HTML", reply_markup=kb)
