@@ -168,7 +168,8 @@ class UserService:
     @staticmethod
     async def get_recent_history(user_id: int, limit: int = 5) -> list[dict]:
         # Getting recent food and water logs, sorting them by created_at DESC
-        query_food = "SELECT id, 'food' as type, foods::text as description, created_at FROM food_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
+        # Using array_to_string for clean display of foods
+        query_food = "SELECT id, 'food' as type, array_to_string(foods, ', ') as description, created_at FROM food_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
         query_water = "SELECT id, 'water' as type, amount::text as description, created_at FROM water_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
         
         async with db.pool.acquire() as connection:
@@ -178,6 +179,16 @@ class UserService:
         combined = [dict(f) for f in foods] + [dict(w) for w in waters]
         combined.sort(key=lambda x: x['created_at'], reverse=True)
         return combined[:limit]
+
+    @staticmethod
+    async def get_today_foods(user_id: int) -> list[str]:
+        query = "SELECT foods FROM food_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE"
+        async with db.pool.acquire() as connection:
+            records = await connection.fetch(query, user_id)
+            all_foods = []
+            for r in records:
+                all_foods.extend(r['foods'])
+            return all_foods
 
     @staticmethod
     async def delete_log(log_type: str, log_id: int):

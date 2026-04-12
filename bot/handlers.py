@@ -9,7 +9,7 @@ from aiogram.fsm.context import FSMContext
 
 from bot.states import OnboardingStates, FeatureStates
 from services.user_service import UserService
-from ai.gemini import analyze_food, generate_meal_plan, generate_fridge_recipe, analyze_diary_entry
+from ai.gemini import analyze_food, generate_meal_plan, generate_fridge_recipe, analyze_diary_entry, analyze_day_summary
 from config import ADMIN_ID
 
 router = Router()
@@ -48,7 +48,10 @@ TEXTS = {
         'history_empty': "Ваша история пуста.",
         'history_title': "Ваши последние действия:",
         'deleted_log': "Запись удалена. Статистика обновлена.",
-        'btn_delete': "❌ Удалить",
+                'btn_delete': "❌ Удалить",
+        'btn_analyze_day': "💡 Анализ дня",
+        'analyzing_day': "🔄 Анализирую ваш день...",
+        'water_added': 
         'water_added': "💧 Добавлено 250 мл воды! Всего за сегодня: {total} / {norm} мл",
         'fridge_prompt': "Напиши, какие продукты у тебя есть (например: курица, яйца, шпинат):",
         'fridge_generating': "👨‍🍳 Придумываю рецепт...",
@@ -93,7 +96,10 @@ TEXTS = {
         'history_empty': "Your history is empty.",
         'history_title': "Your recent actions:",
         'deleted_log': "Log deleted. Statistics updated.",
-        'btn_delete': "❌ Delete",
+                'btn_delete': "❌ Delete",
+        'btn_analyze_day': "💡 Analyze Day",
+        'analyzing_day': "🔄 Analyzing your day...",
+        'water_added': 
         'water_added': "💧 Added 250ml of water! Total today: {total} / {norm} ml",
         'fridge_prompt': "Write what ingredients you have (e.g., chicken, eggs, spinach):",
         'fridge_generating': "👨‍🍳 Inventing a recipe...",
@@ -138,7 +144,10 @@ TEXTS = {
         'history_empty': "Ձեր պատմությունը դատարկ է:",
         'history_title': "Ձեր վերջին գործողությունները:",
         'deleted_log': "Գրառումը ջնջված է: Վիճակագրությունը թարմացված է:",
-        'btn_delete': "❌ Ջնջել",
+                'btn_delete': "❌ Ջնջել",
+        'btn_analyze_day': "💡 Վերլուծել օրը",
+        'analyzing_day': "🔄 Վերլուծում եм ձեր օրը...",
+        'water_added': 
         'water_added': "💧 Ավելացվեց 250մլ ջուր: Այսօր ընդհանուր՝ {total} / {norm} մլ",
         'fridge_prompt': "Գրեք, թե ինչ մթերքներ ունեք (օրինակ՝ հավ, ձու, սպանախ)։",
         'fridge_generating': "👨‍🍳 Մտածում եմ բաղադրատոմս...",
@@ -381,7 +390,10 @@ async def process_text_messages(message: Message, state: FSMContext):
             water=stats['water'], norm_water=norms['water'],
             burned=stats['burned']
         )
-        await message.answer(text, parse_mode="HTML")
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=get_text(lang, 'btn_analyze_day'), callback_data="analyze_day")]
+        ])
+        await message.answer(text, parse_mode="HTML", reply_markup=kb)
         return
 
     # Menu Water
@@ -420,7 +432,11 @@ async def process_text_messages(message: Message, state: FSMContext):
         await message.answer(get_text(lang, 'history_title'))
         for item in history:
             item_type = "🍽" if item['type'] == 'food' else "💧"
-            desc = item['description'] if item['type'] == 'food' else f"{item['description']} ml"
+            desc = item['description']
+            if item['type'] == 'food':
+                desc = desc.strip('{}').replace('"', '').replace(',', ', ')
+            else:
+                desc = f"{desc} ml"
             time_str = item['created_at'].strftime("%H:%M")
             
             kb = InlineKeyboardMarkup(
@@ -482,6 +498,25 @@ async def process_voice_food(message: Message, bot: Bot):
         await message.delete()
     except:
         pass
+
+@router.callback_query(F.data == "analyze_day")
+async def process_analyze_day(callback: CallbackQuery):
+    user = await UserService.get_user(callback.from_user.id)
+    lang = user.get('language', 'ru')
+    
+    # Сначала отвечаем на колбэк, чтобы кнопка не "висела"
+    await callback.answer(get_text(lang, 'analyzing_day'))
+    
+    # Собираем данные
+    stats = await UserService.get_daily_stats(user['id'])
+    norms = UserService.calculate_daily_norms(user)
+    today_foods = await UserService.get_today_foods(user['id'])
+    
+    # Запрос к ИИ
+    advice = await analyze_day_summary(stats, norms, today_foods, user, lang)
+    
+    # Отправляем результат
+    await callback.message.answer(f"<b>{get_text(lang, 'btn_analyze_day')}:</b>\n\n{advice}", parse_mode="HTML")
 
 @router.callback_query(F.data.startswith("del_"))
 async def process_delete_log(callback: CallbackQuery):

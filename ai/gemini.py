@@ -281,3 +281,44 @@ async def generate_fridge_recipe(ingredients: str, user_profile: dict, norms: di
     except Exception as e:
         logger.error(f"Gemini Fridge Recipe error: {e}")
         return "Произошла ошибка при генерации рецепта."
+
+async def analyze_day_summary(stats: dict, norms: dict, foods: list[str], user_profile: dict, language: str) -> str:
+    if not GOOGLE_API_KEY:
+        return "AI недоступен."
+        
+    lang_map = {
+        'ru': "Отвечай строго на русском языке.",
+        'en': "Respond strictly in English.",
+        'am': "Պատասխանեք խստորեն հայերենով:"
+    }
+    lang_prompt = lang_map.get(language, "Отвечай на русском языке")
+
+    foods_str = ", ".join(foods) if foods else "Данных о еде нет"
+    
+    prompt = f"""
+Ты профессиональный диетолог. Проанализируй данные пользователя за сегодня и дай ОДИН короткий совет (до 3 предложений).
+Данные за сегодня:
+- Потреблено: {stats['calories']} / {norms['calories']} ккал
+- Белки: {stats['proteins']} / {norms['proteins']} г
+- Жиры: {stats['fats']} / {norms['fats']} г
+- Углеводы: {stats['carbs']} / {norms['carbs']} г
+- Вода: {stats['water']} / {norms['water']} мл
+- Список съеденного сегодня: {foods_str}
+
+Профиль пользователя:
+- Цель: {user_profile.get('goal')}
+- Рост/Вес/Возраст: {user_profile.get('height')}/{user_profile.get('weight')}/{user_profile.get('age')}
+
+Дай краткую оценку дня и практический совет, как улучшить питание или активность.
+{lang_prompt}
+"""
+    model = genai.GenerativeModel(
+        model_name=MODEL_NAME,
+        generation_config=genai.GenerationConfig(temperature=0.7)
+    )
+    try:
+        response = await model.generate_content_async(prompt)
+        return response.text
+    except Exception as e:
+        logger.error(f"Gemini Day Summary error: {e}")
+        return "Ошибка при анализе дня."
