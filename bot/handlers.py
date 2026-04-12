@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 import io
 import os
 import tempfile
@@ -431,15 +432,17 @@ async def process_text_messages(message: Message, state: FSMContext):
             item_type = "🍽" if item['type'] == 'food' else "💧"
             desc = item['description']
             if item['type'] == 'food':
-                desc = desc.strip('{}').replace('"', '').replace(',', ', ')
+                desc = desc.replace('{', '').replace('}', '').replace('"', '').replace(',', ', ')
             else:
                 desc = f"{desc} ml"
-            time_str = item['created_at'].strftime("%H:%M")
+            # Adjust to Yerevan time (UTC+4)
+            yerevan_time = item['created_at'] + timedelta(hours=4)
+            time_str = yerevan_time.strftime("%H:%M")
             
             kb = InlineKeyboardMarkup(
                 inline_keyboard=[[InlineKeyboardButton(text=get_text(lang, 'btn_delete'), callback_data=f"del_{item['type']}_{item['id']}")]]
             )
-            await message.answer(f"{item_type} [{time_str}] {desc}", reply_markup=kb)
+            await message.answer(f"{item_type} {time_str} | {desc}", reply_markup=kb)
         return
 
     # Menu Weight
