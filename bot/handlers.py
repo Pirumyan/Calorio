@@ -44,6 +44,11 @@ TEXTS = {
         'menu_fridge': "🧊 Холодильник",
         'menu_diary': "📖 Дневник",
         'menu_weight': "⚖️ Вес",
+        'menu_history': "⏱ История",
+        'history_empty': "Ваша история пуста.",
+        'history_title': "Ваши последние действия:",
+        'deleted_log': "Запись удалена. Статистика обновлена.",
+        'btn_delete': "❌ Удалить",
         'water_added': "💧 Добавлено 250 мл воды! Всего за сегодня: {total} / {norm} мл",
         'fridge_prompt': "Напиши, какие продукты у тебя есть (например: курица, яйца, шпинат):",
         'fridge_generating': "👨‍🍳 Придумываю рецепт...",
@@ -84,6 +89,11 @@ TEXTS = {
         'menu_fridge': "🧊 Fridge",
         'menu_diary': "📖 Diary",
         'menu_weight': "⚖️ Weight",
+        'menu_history': "⏱ History",
+        'history_empty': "Your history is empty.",
+        'history_title': "Your recent actions:",
+        'deleted_log': "Log deleted. Statistics updated.",
+        'btn_delete': "❌ Delete",
         'water_added': "💧 Added 250ml of water! Total today: {total} / {norm} ml",
         'fridge_prompt': "Write what ingredients you have (e.g., chicken, eggs, spinach):",
         'fridge_generating': "👨‍🍳 Inventing a recipe...",
@@ -124,6 +134,11 @@ TEXTS = {
         'menu_fridge': "🧊 Սառնարան",
         'menu_diary': "📖 Օրագիր",
         'menu_weight': "⚖️ Քաշ",
+        'menu_history': "⏱ Պատմություն",
+        'history_empty': "Ձեր պատմությունը դատարկ է:",
+        'history_title': "Ձեր վերջին գործողությունները:",
+        'deleted_log': "Գրառումը ջնջված է: Վիճակագրությունը թարմացված է:",
+        'btn_delete': "❌ Ջնջել",
         'water_added': "💧 Ավելացվեց 250մլ ջուր: Այսօր ընդհանուր՝ {total} / {norm} մլ",
         'fridge_prompt': "Գրեք, թե ինչ մթերքներ ունեք (օրինակ՝ հավ, ձու, սպանախ)։",
         'fridge_generating': "👨‍🍳 Մտածում եմ բաղադրատոմս...",
@@ -152,7 +167,8 @@ def get_main_keyboard(lang: str) -> ReplyKeyboardMarkup:
             [KeyboardButton(text=get_text(lang, 'menu_food')), KeyboardButton(text=get_text(lang, 'menu_diary'))],
             [KeyboardButton(text=get_text(lang, 'menu_stats')), KeyboardButton(text=get_text(lang, 'menu_fridge'))],
             [KeyboardButton(text=get_text(lang, 'menu_water')), KeyboardButton(text=get_text(lang, 'menu_weight'))],
-            [KeyboardButton(text=get_text(lang, 'menu_profile')), KeyboardButton(text=get_text(lang, 'menu_lang'))]
+            [KeyboardButton(text=get_text(lang, 'menu_history')), KeyboardButton(text=get_text(lang, 'menu_profile'))],
+            [KeyboardButton(text=get_text(lang, 'menu_lang'))]
         ],
         resize_keyboard=True
     )
@@ -394,6 +410,25 @@ async def process_text_messages(message: Message, state: FSMContext):
         await state.set_state(FeatureStates.waiting_for_diary)
         return
 
+    # Menu History
+    elif message.text in [get_text('ru', 'menu_history'), get_text('en', 'menu_history'), get_text('am', 'menu_history')]:
+        history = await UserService.get_recent_history(user['id'])
+        if not history:
+            await message.answer(get_text(lang, 'history_empty'))
+            return
+            
+        await message.answer(get_text(lang, 'history_title'))
+        for item in history:
+            item_type = "🍽" if item['type'] == 'food' else "💧"
+            desc = item['description'] if item['type'] == 'food' else f"{item['description']} ml"
+            time_str = item['created_at'].strftime("%H:%M")
+            
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text=get_text(lang, 'btn_delete'), callback_data=f"del_{item['type']}_{item['id']}")]]
+            )
+            await message.answer(f"{item_type} [{time_str}] {desc}", reply_markup=kb)
+        return
+
     # Menu Weight
     elif message.text in [get_text('ru', 'menu_weight'), get_text('en', 'menu_weight'), get_text('am', 'menu_weight')]:
         await message.answer(get_text(lang, 'weight_prompt'), reply_markup=get_back_keyboard(lang))
@@ -408,6 +443,10 @@ async def process_text_messages(message: Message, state: FSMContext):
         language=lang
     )
     await handle_analysis_result(bot_msg, result, lang)
+    try:
+        await message.delete()
+    except:
+        pass
 
 @router.message(F.voice, StateFilter(None))
 async def process_voice_food(message: Message, bot: Bot):
@@ -439,6 +478,29 @@ async def process_voice_food(message: Message, bot: Bot):
         pass
     
     await handle_analysis_result(bot_msg, result, lang)
+    try:
+        await message.delete()
+    except:
+        pass
+
+@router.callback_query(F.data.startswith("del_"))
+async def process_delete_log(callback: CallbackQuery):
+    user = await UserService.get_user(callback.from_user.id)
+    lang = user.get('language', 'ru') if user else 'ru'
+    
+    parts = callback.data.split('_')
+    if len(parts) == 3:
+        log_type = parts[1]
+        log_id = int(parts[2])
+        await UserService.delete_log(log_type, log_id)
+        
+        try:
+            await callback.message.edit_text(f"<s>{callback.message.text}</s>\n\n✅ {get_text(lang, 'deleted_log')}", parse_mode="HTML")
+        except:
+            await callback.message.delete()
+            await callback.message.answer(f"✅ {get_text(lang, 'deleted_log')}")
+            
+    await callback.answer()
 
 @router.callback_query(F.data == "regen_meal")
 async def process_regenerate_meal(callback: CallbackQuery):

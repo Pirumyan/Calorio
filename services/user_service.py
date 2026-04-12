@@ -164,3 +164,29 @@ class UserService:
             for r in records:
                 all_foods.extend(r['foods'])
             return list(set(all_foods))
+
+    @staticmethod
+    async def get_recent_history(user_id: int, limit: int = 5) -> list[dict]:
+        # Getting recent food and water logs, sorting them by created_at DESC
+        query_food = "SELECT id, 'food' as type, foods::text as description, created_at FROM food_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
+        query_water = "SELECT id, 'water' as type, amount::text as description, created_at FROM water_logs WHERE user_id = $1 ORDER BY created_at DESC LIMIT $2"
+        
+        async with db.pool.acquire() as connection:
+            foods = await connection.fetch(query_food, user_id, limit)
+            waters = await connection.fetch(query_water, user_id, limit)
+            
+        combined = [dict(f) for f in foods] + [dict(w) for w in waters]
+        combined.sort(key=lambda x: x['created_at'], reverse=True)
+        return combined[:limit]
+
+    @staticmethod
+    async def delete_log(log_type: str, log_id: int):
+        if log_type == 'food':
+            query = "DELETE FROM food_logs WHERE id = $1"
+        elif log_type == 'water':
+            query = "DELETE FROM water_logs WHERE id = $1"
+        else:
+            return
+            
+        async with db.pool.acquire() as connection:
+            await connection.execute(query, log_id)
