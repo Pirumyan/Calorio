@@ -1,4 +1,6 @@
 import io
+import os
+import tempfile
 import logging
 from aiogram import Router, F, Bot
 from aiogram.filters import CommandStart, Command, StateFilter
@@ -420,15 +422,21 @@ async def process_voice_food(message: Message, bot: Bot):
     file_id = message.voice.file_id
     file = await bot.get_file(file_id)
     
-    downloaded_file = io.BytesIO()
-    await bot.download_file(file.file_path, downloaded_file)
-    voice_bytes = downloaded_file.getvalue()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
+        temp_path = temp_audio.name
+        
+    await bot.download_file(file.file_path, destination=temp_path)
 
     result = await analyze_food(
-        input_data=voice_bytes,
+        input_data=temp_path,
         mime_type="audio/ogg",
         language=lang
     )
+    
+    try:
+        os.remove(temp_path)
+    except OSError:
+        pass
     
     await handle_analysis_result(bot_msg, result, lang)
 
@@ -492,14 +500,21 @@ async def process_diary_entry_handler(message: Message, state: FSMContext, bot: 
     if message.voice:
         file_id = message.voice.file_id
         file = await bot.get_file(file_id)
-        downloaded_file = io.BytesIO()
-        await bot.download_file(file.file_path, downloaded_file)
-        input_data = downloaded_file.getvalue()
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
+            temp_path = temp_audio.name
+        await bot.download_file(file.file_path, destination=temp_path)
+        input_data = temp_path
         mime_type = "audio/ogg"
     else:
         input_data = message.text
 
     result = await analyze_diary_entry(input_data, mime_type, lang)
+    
+    if mime_type == "audio/ogg":
+        try:
+            os.remove(input_data)
+        except OSError:
+            pass
     
     if "error" in result:
         await bot_msg.edit_text(f"❌ {result.get('error')}")

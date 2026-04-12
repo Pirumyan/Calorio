@@ -65,36 +65,25 @@ class UserService:
 
     @staticmethod
     async def get_daily_stats(user_id: int) -> dict:
-        food_query = """
-        SELECT COALESCE(SUM(calories), 0) as calories, 
-               COALESCE(SUM(proteins), 0) as proteins, 
-               COALESCE(SUM(fats), 0) as fats, 
-               COALESCE(SUM(carbs), 0) as carbs
-        FROM food_logs 
-        WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
-        """
-        water_query = """
-        SELECT COALESCE(SUM(amount), 0) as water_amount 
-        FROM water_logs 
-        WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
-        """
-        exercise_query = """
-        SELECT COALESCE(SUM(calories_burned), 0) as burned 
-        FROM exercise_logs 
-        WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE
+        query = """
+        SELECT 
+            (SELECT COALESCE(SUM(amount), 0) FROM water_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as water,
+            (SELECT COALESCE(SUM(calories_burned), 0) FROM exercise_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as burned,
+            (SELECT COALESCE(SUM(calories), 0) FROM food_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as calories,
+            (SELECT COALESCE(SUM(proteins), 0) FROM food_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as proteins,
+            (SELECT COALESCE(SUM(fats), 0) FROM food_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as fats,
+            (SELECT COALESCE(SUM(carbs), 0) FROM food_logs WHERE user_id = $1 AND DATE(created_at) = CURRENT_DATE) as carbs
         """
         async with db.pool.acquire() as connection:
-            food_stats = await connection.fetchrow(food_query, user_id)
-            water_stats = await connection.fetchval(water_query, user_id)
-            burned_stats = await connection.fetchval(exercise_query, user_id)
+            stats = await connection.fetchrow(query, user_id)
         
         return {
-            'calories': food_stats['calories'],
-            'proteins': food_stats['proteins'],
-            'fats': food_stats['fats'],
-            'carbs': food_stats['carbs'],
-            'water': water_stats,
-            'burned': burned_stats
+            'calories': stats['calories'],
+            'proteins': stats['proteins'],
+            'fats': stats['fats'],
+            'carbs': stats['carbs'],
+            'water': stats['water'],
+            'burned': stats['burned']
         }
 
     @staticmethod

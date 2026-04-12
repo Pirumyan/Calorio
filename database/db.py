@@ -10,7 +10,16 @@ class Database:
 
     async def connect(self):
         try:
-            self.pool = await asyncpg.create_pool(DATABASE_URL)
+            # Настройки пула для бесплатного тарифа Supabase/Render
+            self.pool = await asyncpg.create_pool(
+                DATABASE_URL,
+                min_size=1,
+                max_size=5,
+                max_inactive_connection_lifetime=300,
+                command_timeout=60,
+                statement_cache_size=0, # Отключаем кеш подготовленных запросов для работы с пулером портом 6543
+                server_settings={'application_name': 'calorio_bot'}
+            )
             await self.init_db()
             logger.info("Connected to PostgreSQL (Supabase) successfully")
         except Exception as e:

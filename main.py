@@ -40,6 +40,7 @@ async def water_reminder_task(bot: Bot):
                     rem_text = texts.get(lang, texts['ru'])
                     try:
                         await bot.send_message(user['id'], rem_text)
+                        await asyncio.sleep(0.05)
                     except Exception:
                         pass
         except Exception as e:

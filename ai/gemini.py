@@ -1,6 +1,7 @@
 import json
 import logging
 import tempfile
+import asyncio
 from typing import Union, Dict, Any
 import google.generativeai as genai
 from config import GOOGLE_API_KEY
@@ -109,11 +110,9 @@ async def analyze_food(
 
         # 📌 AUDIO
         if mime_type == "audio/ogg":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
-                temp_audio.write(input_data)
-                temp_path = temp_audio.name
-
-            uploaded_file = genai.upload_file(path=temp_path)
+            temp_path = input_data
+            # Выполняем синхронную загрузку в фоне, не блокируя asyncio
+            uploaded_file = await asyncio.to_thread(genai.upload_file, path=temp_path)
 
             content_parts.append(uploaded_file)
             content_parts.append("Проанализируй этот аудиотрек.")
@@ -158,9 +157,10 @@ async def analyze_food(
     finally:
         try:
             if 'uploaded_file' in locals():
-                genai.delete_file(uploaded_file.name)
-        except Exception:
-            pass
+                # Синхронное удаление в фоне
+                await asyncio.to_thread(genai.delete_file, uploaded_file.name)
+        except Exception as e:
+            logger.error(f"Error deleting file from Gemini: {e}")
 
 async def analyze_diary_entry(
     input_data: Union[str, bytes],
@@ -180,10 +180,8 @@ async def analyze_diary_entry(
     try:
         content_parts = []
         if mime_type == "audio/ogg":
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".ogg") as temp_audio:
-                temp_audio.write(input_data)
-                temp_path = temp_audio.name
-            uploaded_file = genai.upload_file(path=temp_path)
+            temp_path = input_data
+            uploaded_file = await asyncio.to_thread(genai.upload_file, path=temp_path)
             content_parts.append(uploaded_file)
             content_parts.append("Проанализируй дневник из аудио.")
         else:
@@ -203,8 +201,10 @@ async def analyze_diary_entry(
         return {"error": str(e)}
     finally:
         if 'uploaded_file' in locals():
-            try: genai.delete_file(uploaded_file.name)
-            except: pass
+            try: 
+                await asyncio.to_thread(genai.delete_file, uploaded_file.name)
+            except Exception as e:
+                logger.error(f"Error deleting diary file from Gemini: {e}")
 
 async def generate_meal_plan(user_profile: dict, language: str, recent_foods: list[str] = None, is_regenerate: bool = False) -> str:
     if not GOOGLE_API_KEY:
