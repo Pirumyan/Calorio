@@ -4,7 +4,11 @@ import tempfile
 import asyncio
 from typing import Union, Dict, Any
 import google.generativeai as genai
-from config import GOOGLE_API_KEY
+from config import GOOGLE_API_KEY, GROQ_API_KEY
+from ai.groq_service import (
+    transcribe_audio, groq_chat_completion, 
+    analyze_food_groq, analyze_diary_groq
+)
 
 logger = logging.getLogger(__name__)
 
@@ -172,6 +176,21 @@ async def analyze_food(
 
     except Exception as e:
         logger.error(f"Gemini API error after retries: {e}")
+        
+        # 🛡️ Fallback to Groq
+        if GROQ_API_KEY:
+            logger.info("Attempting fallback to Groq for analyze_food...")
+            text_to_analyze = input_data
+            if mime_type == "audio/ogg":
+                text_to_analyze = await transcribe_audio(input_data)
+                if not text_to_analyze:
+                    return {"error": "Groq STT failed", "analysis": "Ошибка транскрибации (Groq)."}
+            
+            groq_data = await analyze_food_groq(text_to_analyze, language, get_system_instruction(language))
+            if "error" not in groq_data:
+                # Добавляем пометку, что это ответ от Groq
+                groq_data["analysis"] = f"🤖 (Groq) {groq_data.get('analysis', '')}"
+                return groq_data
 
         return {
             "error": "Не удалось проанализировать данные",
@@ -228,6 +247,18 @@ async def analyze_diary_entry(
 
     except Exception as e:
         logger.error(f"Gemini Diary error after retries: {e}")
+        
+        # 🛡️ Fallback to Groq
+        if GROQ_API_KEY:
+            logger.info("Attempting fallback to Groq for analyze_diary_entry...")
+            text_to_analyze = input_data
+            if mime_type == "audio/ogg":
+                text_to_analyze = await transcribe_audio(input_data)
+                if not text_to_analyze:
+                    return {"error": "Groq STT failed"}
+            
+            return await analyze_diary_groq(text_to_analyze, language, get_diary_instruction(language))
+
         return {"error": "Ошибка анализа дневника. Превышен лимит?"}
     finally:
         if 'uploaded_file' in locals() and uploaded_file:
@@ -283,6 +314,14 @@ async def generate_meal_plan(user_profile: dict, language: str, recent_foods: li
         return await _execute_with_retry(_call)
     except Exception as e:
         logger.error(f"Gemini Meal Plan error after retries: {e}")
+        
+        # 🛡️ Fallback to Groq
+        if GROQ_API_KEY:
+            logger.info("Attempting fallback to Groq for generate_meal_plan...")
+            response = await groq_chat_completion(prompt, "You are a professional nutritionist.")
+            if response:
+                return f"🤖 (Groq)\n{response}"
+
         return "Произошла ошибка при генерации плана питания. Возможно, превышен лимит запросов, попробуйте позже."
 
 
@@ -318,6 +357,14 @@ async def generate_fridge_recipe(ingredients: str, user_profile: dict, norms: di
         return await _execute_with_retry(_call)
     except Exception as e:
         logger.error(f"Gemini Fridge Recipe error after retries: {e}")
+        
+        # 🛡️ Fallback to Groq
+        if GROQ_API_KEY:
+            logger.info("Attempting fallback to Groq for generate_fridge_recipe...")
+            response = await groq_chat_completion(prompt, "You are a chef and nutritionist.")
+            if response:
+                return f"🤖 (Groq)\n{response}"
+
         return "Произошла ошибка при генерации рецепта. Возможно, превышен лимит запросов."
 
 async def analyze_day_summary(stats: dict, norms: dict, foods: list[str], user_profile: dict, language: str) -> str:
@@ -362,4 +409,12 @@ async def analyze_day_summary(stats: dict, norms: dict, foods: list[str], user_p
         return await _execute_with_retry(_call)
     except Exception as e:
         logger.error(f"Gemini Day Summary error after retries: {e}")
+        
+        # 🛡️ Fallback to Groq
+        if GROQ_API_KEY:
+            logger.info("Attempting fallback to Groq for analyze_day_summary...")
+            response = await groq_chat_completion(prompt, "You are a professional nutritionist.")
+            if response:
+                return f"🤖 (Groq) {response}"
+
         return "Ошибка при анализе дня. Попробуйте позже."
