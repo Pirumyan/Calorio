@@ -16,6 +16,28 @@ if GOOGLE_API_KEY:
 MODEL_NAME = 'gemini-2.5-flash'
 
 
+async def _execute_with_retry(func, max_retries: int = 3, base_delay: float = 2.0):
+    """
+    Вспомогательная функция для повторных попыток при ошибках квоты (429).
+    """
+    import random
+    
+    for attempt in range(max_retries):
+        try:
+            return await func()
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Quota exceeded" in err_str or "Resource has been exhausted" in err_str:
+                if attempt < max_retries - 1:
+                    # Экспоненциальная задержка: 2, 4, 8... секунд + случайный шум
+                    delay = base_delay * (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(f"Gemini Quota Exceeded (429). Retry {attempt + 1}/{max_retries} in {delay:.2f}s...")
+                    await asyncio.sleep(delay)
+                    continue
+            # Если это не 429 или попытки закончились, пробрасываем ошибку дальше
+            raise e
+
+
 def get_system_instruction(language: str) -> str:
     lang_map = {
         'ru': "Отвечай строго на русском языке. Все элементы массива foods и текст analysis должны быть на русском.",
@@ -97,36 +119,37 @@ async def analyze_food(
             "analysis": "AI недоступен"
         }
 
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        system_instruction=get_system_instruction(language),
-        generation_config=genai.GenerationConfig(
-            temperature=0.0
+    async def _call():
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            system_instruction=get_system_instruction(language),
+            generation_config=genai.GenerationConfig(
+                temperature=0.0
+            )
         )
-    )
-
-    try:
         content_parts = []
+        uploaded_file = None
 
-        # 📌 AUDIO
         if mime_type == "audio/ogg":
-            temp_path = input_data
-            # Выполняем синхронную загрузку в фоне, не блокируя asyncio
-            uploaded_file = await asyncio.to_thread(genai.upload_file, path=temp_path)
-
+            uploaded_file = await asyncio.to_thread(genai.upload_file, path=input_data)
             content_parts.append(uploaded_file)
             content_parts.append("Проанализируй этот аудиотрек.")
-
-        # 📌 TEXT
         else:
             content_parts.append(input_data)
 
-        response = await model.generate_content_async(content_parts)
+        try:
+            response = await model.generate_content_async(content_parts)
+            if not response or not response.text:
+                raise ValueError("Empty response from Gemini")
+            return response.text, uploaded_file
+        except Exception as e:
+            if uploaded_file:
+                await asyncio.to_thread(genai.delete_file, uploaded_file.name)
+            raise e
 
-        if not response or not response.text:
-            raise ValueError("Empty response from Gemini")
-
-        json_text = response.text.strip()
+    try:
+        response_text, uploaded_file = await _execute_with_retry(_call)
+        json_text = response_text.strip()
 
         # 📌 чистка markdown
         if json_text.startswith("```json"):
@@ -148,19 +171,18 @@ async def analyze_food(
         }
 
     except Exception as e:
-        logger.error(f"Gemini API error: {e}")
+        logger.error(f"Gemini API error after retries: {e}")
 
         return {
             "error": "Не удалось проанализировать данные",
-            "analysis": "Произошла ошибка при обращении к AI."
+            "analysis": "Произошла ошибка при обращении к AI. Возможно, превышен лимит."
         }
     finally:
-        try:
-            if 'uploaded_file' in locals():
-                # Синхронное удаление в фоне
+        if 'uploaded_file' in locals() and uploaded_file:
+            try:
                 await asyncio.to_thread(genai.delete_file, uploaded_file.name)
-        except Exception as e:
-            logger.error(f"Error deleting file from Gemini: {e}")
+            except Exception as e:
+                logger.error(f"Error deleting file from Gemini: {e}")
 
 async def analyze_diary_entry(
     input_data: Union[str, bytes],
@@ -171,24 +193,32 @@ async def analyze_diary_entry(
     if not GOOGLE_API_KEY:
         return {"error": "API key not set"}
 
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        system_instruction=get_diary_instruction(language),
-        generation_config=genai.GenerationConfig(temperature=0.0)
-    )
-
-    try:
+    async def _call():
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            system_instruction=get_diary_instruction(language),
+            generation_config=genai.GenerationConfig(temperature=0.0)
+        )
         content_parts = []
+        uploaded_file = None
         if mime_type == "audio/ogg":
-            temp_path = input_data
-            uploaded_file = await asyncio.to_thread(genai.upload_file, path=temp_path)
+            uploaded_file = await asyncio.to_thread(genai.upload_file, path=input_data)
             content_parts.append(uploaded_file)
             content_parts.append("Проанализируй дневник из аудио.")
         else:
             content_parts.append(f"Проанализируй этот дневник: {input_data}")
 
-        response = await model.generate_content_async(content_parts)
-        json_text = response.text.strip()
+        try:
+            response = await model.generate_content_async(content_parts)
+            return response.text, uploaded_file
+        except Exception as e:
+            if uploaded_file:
+                await asyncio.to_thread(genai.delete_file, uploaded_file.name)
+            raise e
+
+    try:
+        json_text, uploaded_file = await _execute_with_retry(_call)
+        json_text = json_text.strip()
         
         if json_text.startswith("```json"): json_text = json_text[7:]
         elif json_text.startswith("```"): json_text = json_text[3:]
@@ -197,10 +227,10 @@ async def analyze_diary_entry(
         return json.loads(json_text.strip())
 
     except Exception as e:
-        logger.error(f"Gemini Diary error: {e}")
-        return {"error": str(e)}
+        logger.error(f"Gemini Diary error after retries: {e}")
+        return {"error": "Ошибка анализа дневника. Превышен лимит?"}
     finally:
-        if 'uploaded_file' in locals():
+        if 'uploaded_file' in locals() and uploaded_file:
             try: 
                 await asyncio.to_thread(genai.delete_file, uploaded_file.name)
             except Exception as e:
@@ -240,16 +270,21 @@ async def generate_meal_plan(user_profile: dict, language: str, recent_foods: li
 {lang_prompt}
 """
     temp = 0.85 if is_regenerate else 0.7
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        generation_config=genai.GenerationConfig(temperature=temp)
-    )
-    try:
+    
+    async def _call():
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            generation_config=genai.GenerationConfig(temperature=temp)
+        )
         response = await model.generate_content_async(prompt)
         return response.text
+
+    try:
+        return await _execute_with_retry(_call)
     except Exception as e:
-        logger.error(f"Gemini Meal Plan error: {e}")
-        return "Произошла ошибка при генерации плана питания."
+        logger.error(f"Gemini Meal Plan error after retries: {e}")
+        return "Произошла ошибка при генерации плана питания. Возможно, превышен лимит запросов, попробуйте позже."
+
 
 async def generate_fridge_recipe(ingredients: str, user_profile: dict, norms: dict, language: str) -> str:
     if not GOOGLE_API_KEY:
@@ -271,16 +306,19 @@ async def generate_fridge_recipe(ingredients: str, user_profile: dict, norms: di
 Укажи КБЖУ получившегося блюда и пошаговый рецепт.
 {lang_prompt}
 """
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        generation_config=genai.GenerationConfig(temperature=0.7)
-    )
-    try:
+    async def _call():
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            generation_config=genai.GenerationConfig(temperature=0.7)
+        )
         response = await model.generate_content_async(prompt)
         return response.text
+
+    try:
+        return await _execute_with_retry(_call)
     except Exception as e:
-        logger.error(f"Gemini Fridge Recipe error: {e}")
-        return "Произошла ошибка при генерации рецепта."
+        logger.error(f"Gemini Fridge Recipe error after retries: {e}")
+        return "Произошла ошибка при генерации рецепта. Возможно, превышен лимит запросов."
 
 async def analyze_day_summary(stats: dict, norms: dict, foods: list[str], user_profile: dict, language: str) -> str:
     if not GOOGLE_API_KEY:
@@ -312,13 +350,16 @@ async def analyze_day_summary(stats: dict, norms: dict, foods: list[str], user_p
 Дай краткую оценку дня и практический совет, как улучшить питание или активность.
 {lang_prompt}
 """
-    model = genai.GenerativeModel(
-        model_name=MODEL_NAME,
-        generation_config=genai.GenerationConfig(temperature=0.7)
-    )
-    try:
+    async def _call():
+        model = genai.GenerativeModel(
+            model_name=MODEL_NAME,
+            generation_config=genai.GenerationConfig(temperature=0.7)
+        )
         response = await model.generate_content_async(prompt)
         return response.text
+
+    try:
+        return await _execute_with_retry(_call)
     except Exception as e:
-        logger.error(f"Gemini Day Summary error: {e}")
-        return "Ошибка при анализе дня."
+        logger.error(f"Gemini Day Summary error after retries: {e}")
+        return "Ошибка при анализе дня. Попробуйте позже."
